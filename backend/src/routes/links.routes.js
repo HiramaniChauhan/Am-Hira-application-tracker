@@ -31,7 +31,7 @@ function extractDomainTitle(rawUrl) {
 }
 
 // 1. GET /api/links - Get all links for the current authenticated user
-linksRouter.get('/', requireAuth, (req, res) => {
+linksRouter.get('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
     const { search, category, status } = req.query;
@@ -57,7 +57,7 @@ linksRouter.get('/', requireAuth, (req, res) => {
 
     query += ` ORDER BY created_at DESC`;
 
-    const links = db.prepare(query).all(...params);
+    const links = await db.all(query, params);
     res.json({ links });
   } catch (error) {
     console.error('Fetch links error:', error);
@@ -65,8 +65,8 @@ linksRouter.get('/', requireAuth, (req, res) => {
   }
 });
 
-// 2. POST /api/links - Add a new link to the user's private SQLite links store
-linksRouter.post('/', requireAuth, (req, res) => {
+// 2. POST /api/links - Add a new link to the user's private links store
+linksRouter.post('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
     const { title, url, category, status, notes, tags } = req.body;
@@ -89,14 +89,12 @@ linksRouter.post('/', requireAuth, (req, res) => {
     const cleanTags = tags ? tags.trim() : '';
     const now = new Date().toISOString();
 
-    const insertStmt = db.prepare(`
+    const result = await db.run(`
       INSERT INTO user_links (
         user_id, title, url, category, status, notes, tags, clicks, created_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-    `);
-
-    const result = insertStmt.run(
+    `, [
       userId,
       resolvedTitle,
       cleanUrl,
@@ -106,12 +104,12 @@ linksRouter.post('/', requireAuth, (req, res) => {
       cleanTags,
       now,
       now
-    );
+    ]);
 
-    const newLink = db.prepare('SELECT * FROM user_links WHERE id = ? AND user_id = ?').get(result.lastInsertRowid, userId);
+    const newLink = await db.get('SELECT * FROM user_links WHERE id = ? AND user_id = ?', [result.lastInsertRowid, userId]);
 
     res.status(201).json({
-      message: `Link "${resolvedTitle}" saved to your private SQLite Links Vault!`,
+      message: `Link "${resolvedTitle}" saved to your private Links Vault!`,
       link: newLink
     });
   } catch (error) {
@@ -121,13 +119,13 @@ linksRouter.post('/', requireAuth, (req, res) => {
 });
 
 // 3. PUT /api/links/:id - Update an existing stored link
-linksRouter.put('/:id', requireAuth, (req, res) => {
+linksRouter.put('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
     const { title, url, category, status, notes, tags } = req.body;
 
-    const existing = db.prepare('SELECT * FROM user_links WHERE id = ? AND user_id = ?').get(id, userId);
+    const existing = await db.get('SELECT * FROM user_links WHERE id = ? AND user_id = ?', [id, userId]);
     if (!existing) {
       return res.status(404).json({ error: 'Link not found' });
     }
@@ -149,7 +147,7 @@ linksRouter.put('/:id', requireAuth, (req, res) => {
     const updatedTags = tags !== undefined ? tags.trim() : existing.tags;
     const now = new Date().toISOString();
 
-    db.prepare(`
+    await db.run(`
       UPDATE user_links
       SET 
         title = ?,
@@ -160,7 +158,7 @@ linksRouter.put('/:id', requireAuth, (req, res) => {
         tags = ?,
         updated_at = ?
       WHERE id = ? AND user_id = ?
-    `).run(
+    `, [
       updatedTitle,
       cleanUrl,
       updatedCategory,
@@ -170,12 +168,12 @@ linksRouter.put('/:id', requireAuth, (req, res) => {
       now,
       id,
       userId
-    );
+    ]);
 
-    const updated = db.prepare('SELECT * FROM user_links WHERE id = ? AND user_id = ?').get(id, userId);
+    const updated = await db.get('SELECT * FROM user_links WHERE id = ? AND user_id = ?', [id, userId]);
 
     res.json({
-      message: 'Link updated successfully in SQLite database!',
+      message: 'Link updated successfully!',
       link: updated
     });
   } catch (error) {
@@ -185,17 +183,17 @@ linksRouter.put('/:id', requireAuth, (req, res) => {
 });
 
 // 4. DELETE /api/links/:id - Delete a stored link
-linksRouter.delete('/:id', requireAuth, (req, res) => {
+linksRouter.delete('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
-    const existing = db.prepare('SELECT id, title FROM user_links WHERE id = ? AND user_id = ?').get(id, userId);
+    const existing = await db.get('SELECT id, title FROM user_links WHERE id = ? AND user_id = ?', [id, userId]);
     if (!existing) {
       return res.status(404).json({ error: 'Link not found' });
     }
 
-    db.prepare('DELETE FROM user_links WHERE id = ? AND user_id = ?').run(id, userId);
+    await db.run('DELETE FROM user_links WHERE id = ? AND user_id = ?', [id, userId]);
 
     res.json({ message: `Link "${existing.title}" removed from your private store.` });
   } catch (error) {
@@ -205,17 +203,17 @@ linksRouter.delete('/:id', requireAuth, (req, res) => {
 });
 
 // 5. POST /api/links/:id/click - Increment click count
-linksRouter.post('/:id/click', requireAuth, (req, res) => {
+linksRouter.post('/:id/click', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
     const now = new Date().toISOString();
-    db.prepare(`
+    await db.run(`
       UPDATE user_links 
       SET clicks = clicks + 1, updated_at = ?
       WHERE id = ? AND user_id = ?
-    `).run(now, id, userId);
+    `, [now, id, userId]);
 
     res.json({ success: true });
   } catch (error) {
@@ -224,22 +222,22 @@ linksRouter.post('/:id/click', requireAuth, (req, res) => {
 });
 
 // 6. GET /api/links/stats - Summary counts for user's links
-linksRouter.get('/stats', requireAuth, (req, res) => {
+linksRouter.get('/stats', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const totalLinks = db.prepare('SELECT COUNT(*) as count FROM user_links WHERE user_id = ?').get(userId).count;
-    const jobPostsCount = db.prepare("SELECT COUNT(*) as count FROM user_links WHERE user_id = ? AND category = 'Job Post'").get(userId).count;
-    const portalsCount = db.prepare("SELECT COUNT(*) as count FROM user_links WHERE user_id = ? AND category = 'Application Portal'").get(userId).count;
-    const resumeDocsCount = db.prepare("SELECT COUNT(*) as count FROM user_links WHERE user_id = ? AND category = 'Resume & Docs'").get(userId).count;
-    const prepCount = db.prepare("SELECT COUNT(*) as count FROM user_links WHERE user_id = ? AND category = 'Interview Prep'").get(userId).count;
+    const totalLinksRow = await db.get('SELECT COUNT(*) as count FROM user_links WHERE user_id = ?', [userId]);
+    const jobPostsRow = await db.get("SELECT COUNT(*) as count FROM user_links WHERE user_id = ? AND category = 'Job Post'", [userId]);
+    const portalsRow = await db.get("SELECT COUNT(*) as count FROM user_links WHERE user_id = ? AND category = 'Application Portal'", [userId]);
+    const resumeDocsRow = await db.get("SELECT COUNT(*) as count FROM user_links WHERE user_id = ? AND category = 'Resume & Docs'", [userId]);
+    const prepRow = await db.get("SELECT COUNT(*) as count FROM user_links WHERE user_id = ? AND category = 'Interview Prep'", [userId]);
 
     res.json({
-      totalLinks,
-      jobPostsCount,
-      portalsCount,
-      resumeDocsCount,
-      prepCount
+      totalLinks: totalLinksRow ? Number(totalLinksRow.count) : 0,
+      jobPostsCount: jobPostsRow ? Number(jobPostsRow.count) : 0,
+      portalsCount: portalsRow ? Number(portalsRow.count) : 0,
+      resumeDocsCount: resumeDocsRow ? Number(resumeDocsRow.count) : 0,
+      prepCount: prepRow ? Number(prepRow.count) : 0
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to get links stats' });

@@ -15,9 +15,9 @@ function formatUrl(url) {
 }
 
 // 1. GET /api/companies - Public directory of approved company links
-companiesRouter.get('/', optionalAuth, (req, res) => {
+companiesRouter.get('/', optionalAuth, async (req, res) => {
   try {
-    const { search, category, status } = req.query;
+    const { search, category } = req.query;
     const userId = req.user ? req.user.id : null;
 
     let query = `
@@ -50,7 +50,7 @@ companiesRouter.get('/', optionalAuth, (req, res) => {
 
     query += ` ORDER BY c.created_at DESC`;
 
-    const companies = db.prepare(query).all(...params);
+    const companies = await db.all(query, params);
 
     // Map null booleans to false
     const mapped = companies.map(c => ({
@@ -92,10 +92,7 @@ function extractCompanyNameFromUrl(rawUrl) {
 }
 
 // 2. POST /api/companies - Add company job link
-// Only link is required! If name is omitted, extracted automatically from domain.
-// If Admin: immediately approved & published.
-// If regular user: saved as pending for admin approval.
-companiesRouter.post('/', requireAuth, (req, res) => {
+companiesRouter.post('/', requireAuth, async (req, res) => {
   try {
     const {
       link,
@@ -130,7 +127,7 @@ companiesRouter.post('/', requireAuth, (req, res) => {
     const isAdmin = req.user.role === 'admin';
     const status = isAdmin ? 'approved' : 'pending';
 
-    const insertStmt = db.prepare(`
+    const result = await db.run(`
       INSERT INTO companies (
         name,
         website_url,
@@ -145,9 +142,7 @@ companiesRouter.post('/', requireAuth, (req, res) => {
         submitted_by_name
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = insertStmt.run(
+    `, [
       resolvedName,
       cleanWebsiteUrl,
       cleanCareersUrl,
@@ -159,9 +154,9 @@ companiesRouter.post('/', requireAuth, (req, res) => {
       status,
       req.user.id,
       req.user.name || req.user.email
-    );
+    ]);
 
-    const newCompany = db.prepare('SELECT * FROM companies WHERE id = ?').get(result.lastInsertRowid);
+    const newCompany = await db.get('SELECT * FROM companies WHERE id = ?', [result.lastInsertRowid]);
 
     if (isAdmin) {
       res.status(201).json({
@@ -183,9 +178,9 @@ companiesRouter.post('/', requireAuth, (req, res) => {
 });
 
 // 3. GET /api/companies/pending - Admin review queue for submitted links
-companiesRouter.get('/pending', requireAuth, requireAdmin, (req, res) => {
+companiesRouter.get('/pending', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const pendingList = db.prepare(`
+    const pendingList = await db.all(`
       SELECT 
         c.*,
         u.email AS submitter_email
@@ -193,7 +188,7 @@ companiesRouter.get('/pending', requireAuth, requireAdmin, (req, res) => {
       LEFT JOIN users u ON c.submitted_by_user_id = u.id
       WHERE c.status = 'pending'
       ORDER BY c.created_at ASC
-    `).all();
+    `);
 
     res.json({ pending: pendingList });
   } catch (error) {
@@ -203,22 +198,22 @@ companiesRouter.get('/pending', requireAuth, requireAdmin, (req, res) => {
 });
 
 // 4. POST /api/companies/:id/approve - Admin approves submitted link
-companiesRouter.post('/:id/approve', requireAuth, requireAdmin, (req, res) => {
+companiesRouter.post('/:id/approve', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(id);
+    const company = await db.get('SELECT * FROM companies WHERE id = ?', [id]);
 
     if (!company) {
       return res.status(404).json({ error: 'Company link not found' });
     }
 
-    db.prepare(`
+    await db.run(`
       UPDATE companies 
       SET status = 'approved', updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `).run(id);
+    `, [id]);
 
-    const updated = db.prepare('SELECT * FROM companies WHERE id = ?').get(id);
+    const updated = await db.get('SELECT * FROM companies WHERE id = ?', [id]);
     res.json({
       message: `"${company.name}" link has been approved and published to the public directory!`,
       company: updated
@@ -230,21 +225,21 @@ companiesRouter.post('/:id/approve', requireAuth, requireAdmin, (req, res) => {
 });
 
 // 5. POST /api/companies/:id/reject - Admin rejects submitted link
-companiesRouter.post('/:id/reject', requireAuth, requireAdmin, (req, res) => {
+companiesRouter.post('/:id/reject', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
 
-    const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(id);
+    const company = await db.get('SELECT * FROM companies WHERE id = ?', [id]);
     if (!company) {
       return res.status(404).json({ error: 'Company link not found' });
     }
 
-    db.prepare(`
+    await db.run(`
       UPDATE companies 
       SET status = 'rejected', admin_notes = ?, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `).run(reason || 'Link rejected during verification', id);
+    `, [reason || 'Link rejected during verification', id]);
 
     res.json({ message: `"${company.name}" submission was rejected.` });
   } catch (error) {
@@ -254,15 +249,15 @@ companiesRouter.post('/:id/reject', requireAuth, requireAdmin, (req, res) => {
 });
 
 // 6. DELETE /api/companies/:id - Admin deletes company
-companiesRouter.delete('/:id', requireAuth, requireAdmin, (req, res) => {
+companiesRouter.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(id);
+    const company = await db.get('SELECT * FROM companies WHERE id = ?', [id]);
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    db.prepare('DELETE FROM companies WHERE id = ?').run(id);
+    await db.run('DELETE FROM companies WHERE id = ?', [id]);
     res.json({ message: `Company "${company.name}" removed.` });
   } catch (error) {
     console.error('Delete company error:', error);
@@ -271,28 +266,19 @@ companiesRouter.delete('/:id', requireAuth, requireAdmin, (req, res) => {
 });
 
 // 6b. POST /api/companies/bulk-delete - Admin deletes multiple companies in one go
-companiesRouter.post('/bulk-delete', requireAuth, requireAdmin, (req, res) => {
+companiesRouter.post('/bulk-delete', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'Please provide an array of company IDs to delete' });
     }
 
-    const deleteStmt = db.prepare('DELETE FROM companies WHERE id = ?');
-    const deleteMany = db.transaction((idList) => {
-      let count = 0;
-      for (const id of idList) {
-        const result = deleteStmt.run(id);
-        if (result.changes > 0) count++;
-      }
-      return count;
-    });
-
-    const deletedCount = deleteMany(ids);
+    const placeholders = ids.map(() => '?').join(',');
+    const result = await db.run(`DELETE FROM companies WHERE id IN (${placeholders})`, ids);
 
     res.json({
-      message: `Successfully deleted ${deletedCount} ${deletedCount === 1 ? 'company' : 'companies'} from SQLite database.`,
-      deletedCount
+      message: `Successfully deleted ${result.changes} ${result.changes === 1 ? 'company' : 'companies'}.`,
+      deletedCount: result.changes
     });
   } catch (error) {
     console.error('Bulk delete error:', error);
@@ -301,13 +287,13 @@ companiesRouter.post('/bulk-delete', requireAuth, requireAdmin, (req, res) => {
 });
 
 // 7. GET /api/companies/my-submissions - User's submitted company links
-companiesRouter.get('/my-submissions', requireAuth, (req, res) => {
+companiesRouter.get('/my-submissions', requireAuth, async (req, res) => {
   try {
-    const submissions = db.prepare(`
+    const submissions = await db.all(`
       SELECT * FROM companies 
       WHERE submitted_by_user_id = ?
       ORDER BY created_at DESC
-    `).all(req.user.id);
+    `, [req.user.id]);
 
     res.json({ submissions });
   } catch (error) {

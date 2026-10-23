@@ -6,7 +6,7 @@ import { signToken, requireAuth } from '../auth.js';
 export const authRouter = express.Router();
 
 // Register new user
-authRouter.post('/register', (req, res) => {
+authRouter.post('/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
@@ -15,7 +15,7 @@ authRouter.post('/register', (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
+    const existing = await db.get('SELECT id FROM users WHERE email = ?', [cleanEmail]);
     if (existing) {
       return res.status(400).json({ error: 'An account with this email already exists' });
     }
@@ -23,19 +23,20 @@ authRouter.post('/register', (req, res) => {
     const passwordHash = bcrypt.hashSync(password, 10);
     
     // Only the designated admin email or initial setup receives admin role
-    const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
+    const adminCountRow = await db.get("SELECT COUNT(*) as count FROM users WHERE role = 'admin'");
+    const adminCount = adminCountRow ? Number(adminCountRow.count) : 0;
     const isOwner = cleanEmail === 'hiramanichauhan2399@gmail.com' || adminCount === 0;
     const role = isOwner ? 'admin' : 'user';
 
-    const result = db.prepare(`
+    const result = await db.run(`
       INSERT INTO users (name, email, password_hash, role)
       VALUES (?, ?, ?, ?)
-    `).run(name.trim(), cleanEmail, passwordHash, role);
+    `, [name.trim(), cleanEmail, passwordHash, role]);
 
-    const newUserRow = db.prepare(`
+    const newUserRow = await db.get(`
       SELECT id, name, email, role, headline, phone, location, bio, resume_url, portfolio_url, github_url, linkedin_url, created_at, updated_at 
       FROM users WHERE id = ?
-    `).get(result.lastInsertRowid);
+    `, [result.lastInsertRowid]);
 
     const token = signToken(newUserRow);
     res.status(201).json({ user: newUserRow, token });
@@ -46,7 +47,7 @@ authRouter.post('/register', (req, res) => {
 });
 
 // Login
-authRouter.post('/login', (req, res) => {
+authRouter.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -55,10 +56,10 @@ authRouter.post('/login', (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const userRow = db.prepare(`
+    const userRow = await db.get(`
       SELECT id, name, email, password_hash, role, headline, phone, location, bio, resume_url, portfolio_url, github_url, linkedin_url, created_at, updated_at 
       FROM users WHERE email = ?
-    `).get(cleanEmail);
+    `, [cleanEmail]);
 
     if (!userRow) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -95,12 +96,12 @@ authRouter.post('/login', (req, res) => {
 });
 
 // Current user profile
-authRouter.get('/me', requireAuth, (req, res) => {
+authRouter.get('/me', requireAuth, async (req, res) => {
   try {
-    const userRow = db.prepare(`
+    const userRow = await db.get(`
       SELECT id, name, email, role, headline, phone, location, bio, resume_url, portfolio_url, github_url, linkedin_url, created_at, updated_at 
       FROM users WHERE id = ?
-    `).get(req.user.id);
+    `, [req.user.id]);
 
     if (!userRow) {
       return res.status(404).json({ error: 'User not found' });
@@ -111,8 +112,8 @@ authRouter.get('/me', requireAuth, (req, res) => {
   }
 });
 
-// Update user profile data in SQLite
-authRouter.put('/profile', requireAuth, (req, res) => {
+// Update user profile data in database
+authRouter.put('/profile', requireAuth, async (req, res) => {
   try {
     const {
       name,
@@ -132,7 +133,7 @@ authRouter.put('/profile', requireAuth, (req, res) => {
 
     const now = new Date().toISOString();
 
-    db.prepare(`
+    await db.run(`
       UPDATE users 
       SET 
         name = COALESCE(?, name),
@@ -146,7 +147,7 @@ authRouter.put('/profile', requireAuth, (req, res) => {
         linkedin_url = ?,
         updated_at = ?
       WHERE id = ?
-    `).run(
+    `, [
       name ? name.trim() : null,
       headline !== undefined ? headline.trim() : null,
       phone !== undefined ? phone.trim() : null,
@@ -158,15 +159,15 @@ authRouter.put('/profile', requireAuth, (req, res) => {
       linkedin_url !== undefined ? linkedin_url.trim() : null,
       now,
       req.user.id
-    );
+    ]);
 
-    const updatedUser = db.prepare(`
+    const updatedUser = await db.get(`
       SELECT id, name, email, role, headline, phone, location, bio, resume_url, portfolio_url, github_url, linkedin_url, created_at, updated_at 
       FROM users WHERE id = ?
-    `).get(req.user.id);
+    `, [req.user.id]);
 
     res.json({
-      message: 'Profile updated successfully in SQLite database!',
+      message: 'Profile updated successfully!',
       user: updatedUser
     });
   } catch (error) {
@@ -176,7 +177,7 @@ authRouter.put('/profile', requireAuth, (req, res) => {
 });
 
 // Change user password
-authRouter.put('/change-password', requireAuth, (req, res) => {
+authRouter.put('/change-password', requireAuth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
@@ -188,7 +189,7 @@ authRouter.put('/change-password', requireAuth, (req, res) => {
       return res.status(400).json({ error: 'New password must be at least 4 characters long' });
     }
 
-    const userRow = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+    const userRow = await db.get('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
     if (!userRow) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -201,11 +202,11 @@ authRouter.put('/change-password', requireAuth, (req, res) => {
     const newHash = bcrypt.hashSync(newPassword, 10);
     const now = new Date().toISOString();
 
-    db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').run(
+    await db.run('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [
       newHash,
       now,
       req.user.id
-    );
+    ]);
 
     res.json({ message: 'Password changed successfully.' });
   } catch (error) {

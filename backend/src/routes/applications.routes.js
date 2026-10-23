@@ -5,7 +5,7 @@ import { requireAuth } from '../auth.js';
 export const applicationsRouter = express.Router();
 
 // 1. GET /api/applications - List of user's tracked applications
-applicationsRouter.get('/', requireAuth, (req, res) => {
+applicationsRouter.get('/', requireAuth, async (req, res) => {
   try {
     const { status } = req.query;
     const userId = req.user.id;
@@ -42,7 +42,7 @@ applicationsRouter.get('/', requireAuth, (req, res) => {
 
     query += ` ORDER BY ua.updated_at DESC`;
 
-    const applications = db.prepare(query).all(...params);
+    const applications = await db.all(query, params);
 
     const mapped = applications.map(app => ({
       ...app,
@@ -58,8 +58,7 @@ applicationsRouter.get('/', requireAuth, (req, res) => {
 });
 
 // 2. POST /api/applications/toggle-applied - Click checkbox for "Applied"
-// Moves to "My Applications" ("companies i have filled the form")
-applicationsRouter.post('/toggle-applied', requireAuth, (req, res) => {
+applicationsRouter.post('/toggle-applied', requireAuth, async (req, res) => {
   try {
     const { companyId, isApplied } = req.body;
     const userId = req.user.id;
@@ -68,26 +67,24 @@ applicationsRouter.post('/toggle-applied', requireAuth, (req, res) => {
       return res.status(400).json({ error: 'companyId is required' });
     }
 
-    const company = db.prepare('SELECT id, name FROM companies WHERE id = ?').get(companyId);
+    const company = await db.get('SELECT id, name FROM companies WHERE id = ?', [companyId]);
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const existing = db.prepare('SELECT * FROM user_applications WHERE user_id = ? AND company_id = ?').get(userId, companyId);
+    const existing = await db.get('SELECT * FROM user_applications WHERE user_id = ? AND company_id = ?', [userId, companyId]);
 
     const appliedVal = isApplied ? 1 : 0;
     const now = new Date().toISOString();
 
     if (!existing) {
-      // Create new tracking entry
       const status = isApplied ? 'applied' : 'to_apply';
-      db.prepare(`
+      await db.run(`
         INSERT INTO user_applications (
           user_id, company_id, status, is_applied, is_interviewed, applied_date, updated_at
         ) VALUES (?, ?, ?, ?, 0, ?, ?)
-      `).run(userId, companyId, status, appliedVal, isApplied ? now : null, now);
+      `, [userId, companyId, status, appliedVal, isApplied ? now : null, now]);
     } else {
-      // Update existing
       let newStatus = existing.status;
       if (isApplied) {
         newStatus = existing.is_interviewed ? 'interviewing' : 'applied';
@@ -95,7 +92,7 @@ applicationsRouter.post('/toggle-applied', requireAuth, (req, res) => {
         newStatus = existing.is_interviewed ? 'interviewing' : 'to_apply';
       }
 
-      db.prepare(`
+      await db.run(`
         UPDATE user_applications
         SET 
           is_applied = ?,
@@ -103,15 +100,15 @@ applicationsRouter.post('/toggle-applied', requireAuth, (req, res) => {
           applied_date = CASE WHEN ? = 1 THEN COALESCE(applied_date, ?) ELSE applied_date END,
           updated_at = ?
         WHERE user_id = ? AND company_id = ?
-      `).run(appliedVal, newStatus, appliedVal, now, now, userId, companyId);
+      `, [appliedVal, newStatus, appliedVal, now, now, userId, companyId]);
     }
 
-    const updated = db.prepare(`
+    const updated = await db.get(`
       SELECT ua.*, c.name AS company_name, c.careers_url 
       FROM user_applications ua
       JOIN companies c ON ua.company_id = c.id
       WHERE ua.user_id = ? AND ua.company_id = ?
-    `).get(userId, companyId);
+    `, [userId, companyId]);
 
     res.json({
       message: isApplied
@@ -130,8 +127,7 @@ applicationsRouter.post('/toggle-applied', requireAuth, (req, res) => {
 });
 
 // 3. POST /api/applications/toggle-interviewed - Click for "Interviewed"
-// Moves to "Interviewed" section ("companies i am in process")
-applicationsRouter.post('/toggle-interviewed', requireAuth, (req, res) => {
+applicationsRouter.post('/toggle-interviewed', requireAuth, async (req, res) => {
   try {
     const { companyId, isInterviewed, interviewStage } = req.body;
     const userId = req.user.id;
@@ -140,24 +136,23 @@ applicationsRouter.post('/toggle-interviewed', requireAuth, (req, res) => {
       return res.status(400).json({ error: 'companyId is required' });
     }
 
-    const company = db.prepare('SELECT id, name FROM companies WHERE id = ?').get(companyId);
+    const company = await db.get('SELECT id, name FROM companies WHERE id = ?', [companyId]);
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const existing = db.prepare('SELECT * FROM user_applications WHERE user_id = ? AND company_id = ?').get(userId, companyId);
+    const existing = await db.get('SELECT * FROM user_applications WHERE user_id = ? AND company_id = ?', [userId, companyId]);
 
     const interviewedVal = isInterviewed ? 1 : 0;
     const now = new Date().toISOString();
 
     if (!existing) {
-      // If setting interviewed, they are also applied
       const status = isInterviewed ? 'interviewing' : 'to_apply';
-      db.prepare(`
+      await db.run(`
         INSERT INTO user_applications (
           user_id, company_id, status, is_applied, is_interviewed, applied_date, interview_date, interview_stage, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `, [
         userId,
         companyId,
         status,
@@ -167,7 +162,7 @@ applicationsRouter.post('/toggle-interviewed', requireAuth, (req, res) => {
         isInterviewed ? now : null,
         interviewStage || (isInterviewed ? 'Initial Screening' : null),
         now
-      );
+      ]);
     } else {
       let newStatus = existing.status;
       if (isInterviewed) {
@@ -176,7 +171,7 @@ applicationsRouter.post('/toggle-interviewed', requireAuth, (req, res) => {
         newStatus = existing.is_applied ? 'applied' : 'to_apply';
       }
 
-      db.prepare(`
+      await db.run(`
         UPDATE user_applications
         SET 
           is_interviewed = ?,
@@ -186,7 +181,7 @@ applicationsRouter.post('/toggle-interviewed', requireAuth, (req, res) => {
           interview_stage = CASE WHEN ? = 1 THEN COALESCE(interview_stage, ?) ELSE interview_stage END,
           updated_at = ?
         WHERE user_id = ? AND company_id = ?
-      `).run(
+      `, [
         interviewedVal,
         interviewedVal,
         newStatus,
@@ -197,15 +192,15 @@ applicationsRouter.post('/toggle-interviewed', requireAuth, (req, res) => {
         now,
         userId,
         companyId
-      );
+      ]);
     }
 
-    const updated = db.prepare(`
+    const updated = await db.get(`
       SELECT ua.*, c.name AS company_name, c.careers_url 
       FROM user_applications ua
       JOIN companies c ON ua.company_id = c.id
       WHERE ua.user_id = ? AND ua.company_id = ?
-    `).get(userId, companyId);
+    `, [userId, companyId]);
 
     res.json({
       message: isInterviewed
@@ -224,25 +219,25 @@ applicationsRouter.post('/toggle-interviewed', requireAuth, (req, res) => {
 });
 
 // 4. POST /api/applications/save-to-apply - Add to "To Apply" section
-applicationsRouter.post('/save-to-apply', requireAuth, (req, res) => {
+applicationsRouter.post('/save-to-apply', requireAuth, async (req, res) => {
   try {
     const { companyId, notes } = req.body;
     const userId = req.user.id;
 
-    const company = db.prepare('SELECT id, name FROM companies WHERE id = ?').get(companyId);
+    const company = await db.get('SELECT id, name FROM companies WHERE id = ?', [companyId]);
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
     const now = new Date().toISOString();
-    db.prepare(`
+    await db.run(`
       INSERT INTO user_applications (user_id, company_id, status, is_applied, is_interviewed, notes, updated_at)
       VALUES (?, ?, 'to_apply', 0, 0, ?, ?)
       ON CONFLICT(user_id, company_id) DO UPDATE SET
         status = 'to_apply',
         notes = COALESCE(excluded.notes, user_applications.notes),
         updated_at = excluded.updated_at
-    `).run(userId, companyId, notes || '', now);
+    `, [userId, companyId, notes || '', now]);
 
     res.json({ message: `Added "${company.name}" to your To Apply list!` });
   } catch (error) {
@@ -251,7 +246,7 @@ applicationsRouter.post('/save-to-apply', requireAuth, (req, res) => {
 });
 
 // 5. POST /api/applications/update-details - Update stage, notes, dates
-applicationsRouter.post('/update-details', requireAuth, (req, res) => {
+applicationsRouter.post('/update-details', requireAuth, async (req, res) => {
   try {
     const { companyId, status, notes, interviewStage, interviewDate } = req.body;
     const userId = req.user.id;
@@ -260,7 +255,7 @@ applicationsRouter.post('/update-details', requireAuth, (req, res) => {
     const isInterviewed = status === 'interviewing' || status === 'offered' ? 1 : 0;
     const now = new Date().toISOString();
 
-    db.prepare(`
+    await db.run(`
       INSERT INTO user_applications (
         user_id, company_id, status, is_applied, is_interviewed, interview_stage, interview_date, notes, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -272,7 +267,7 @@ applicationsRouter.post('/update-details', requireAuth, (req, res) => {
         interview_date = excluded.interview_date,
         notes = excluded.notes,
         updated_at = excluded.updated_at
-    `).run(
+    `, [
       userId,
       companyId,
       status || 'applied',
@@ -282,7 +277,7 @@ applicationsRouter.post('/update-details', requireAuth, (req, res) => {
       interviewDate || null,
       notes || '',
       now
-    );
+    ]);
 
     res.json({ message: 'Application details updated.' });
   } catch (error) {
@@ -291,34 +286,39 @@ applicationsRouter.post('/update-details', requireAuth, (req, res) => {
 });
 
 // 6. GET /api/applications/stats - Summary counts for dashboard badges
-applicationsRouter.get('/stats', requireAuth, (req, res) => {
+applicationsRouter.get('/stats', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
     const isAdmin = req.user.role === 'admin';
 
-    const totalCompanies = db.prepare("SELECT COUNT(*) as count FROM companies WHERE status = 'approved'").get().count;
+    const totalCompaniesRow = await db.get("SELECT COUNT(*) as count FROM companies WHERE status = 'approved'");
+    const totalCompanies = totalCompaniesRow ? Number(totalCompaniesRow.count) : 0;
 
-    const toApplyCount = db.prepare(`
+    const toApplyCountRow = await db.get(`
       SELECT COUNT(*) as count FROM companies c
       LEFT JOIN user_applications ua ON c.id = ua.company_id AND ua.user_id = ?
       WHERE c.status = 'approved' 
         AND (ua.is_applied IS NULL OR ua.is_applied = 0) 
         AND (ua.is_interviewed IS NULL OR ua.is_interviewed = 0)
-    `).get(userId).count;
+    `, [userId]);
+    const toApplyCount = toApplyCountRow ? Number(toApplyCountRow.count) : 0;
 
-    const appliedCount = db.prepare(`
+    const appliedCountRow = await db.get(`
       SELECT COUNT(*) as count FROM user_applications 
       WHERE user_id = ? AND (is_applied = 1 OR status = 'applied')
-    `).get(userId).count;
+    `, [userId]);
+    const appliedCount = appliedCountRow ? Number(appliedCountRow.count) : 0;
 
-    const interviewingCount = db.prepare(`
+    const interviewingCountRow = await db.get(`
       SELECT COUNT(*) as count FROM user_applications 
       WHERE user_id = ? AND (is_interviewed = 1 OR status = 'interviewing')
-    `).get(userId).count;
+    `, [userId]);
+    const interviewingCount = interviewingCountRow ? Number(interviewingCountRow.count) : 0;
 
     let pendingApprovalsCount = 0;
     if (isAdmin) {
-      pendingApprovalsCount = db.prepare("SELECT COUNT(*) as count FROM companies WHERE status = 'pending'").get().count;
+      const pendingRow = await db.get("SELECT COUNT(*) as count FROM companies WHERE status = 'pending'");
+      pendingApprovalsCount = pendingRow ? Number(pendingRow.count) : 0;
     }
 
     res.json({

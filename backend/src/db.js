@@ -1,54 +1,57 @@
-import Database from 'better-sqlite3';
+import { createClient } from '@libsql/client';
 import bcrypt from 'bcryptjs';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+dotenv.config();
 
-const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-const dataDir = isServerless ? '/tmp' : path.join(__dirname, '..', 'data');
+const url = process.env.TURSO_DATABASE_URL || 'file:./data/easyjob.db';
+const authToken = process.env.TURSO_AUTH_TOKEN;
 
-if (!fs.existsSync(dataDir)) {
-  try {
-    fs.mkdirSync(dataDir, { recursive: true });
-  } catch (err) {
-    console.warn('Could not create data directory:', err.message);
+console.log('Initializing database client:', url.startsWith('libsql://') ? 'Turso Cloud SQLite' : url);
+
+export const client = createClient({
+  url,
+  authToken
+});
+
+export const db = {
+  // Returns array of objects matching column names
+  all: async (sql, args = []) => {
+    const res = await client.execute({ sql, args });
+    return res.rows;
+  },
+  // Returns single row object or null
+  get: async (sql, args = []) => {
+    const res = await client.execute({ sql, args });
+    return res.rows.length > 0 ? res.rows[0] : null;
+  },
+  // Runs insert, update, delete
+  run: async (sql, args = []) => {
+    const res = await client.execute({ sql, args });
+    return {
+      lastInsertRowid: res.lastInsertRowid != null ? Number(res.lastInsertRowid) : null,
+      changes: res.rowsAffected
+    };
+  },
+  // Execute single SQL statement
+  execute: async (sql, args = []) => {
+    return client.execute({ sql, args });
+  },
+  // Execute multiple SQL statements
+  exec: async (sql) => {
+    return client.executeMultiple(sql);
+  },
+  // Batch multiple queries in a transaction
+  batch: async (statements) => {
+    return client.batch(statements);
   }
-}
+};
 
-const dbPath = process.env.DB_PATH || path.join(dataDir, 'easyjob.db');
-
-// In serverless environments, copy existing seed database to /tmp if it doesn't exist yet
-if (isServerless && !fs.existsSync(dbPath)) {
-  const localSeedDb = path.join(__dirname, '..', 'data', 'easyjob.db');
-  if (fs.existsSync(localSeedDb)) {
-    try {
-      fs.copyFileSync(localSeedDb, dbPath);
-    } catch (err) {
-      console.warn('Could not copy seed database to /tmp:', err.message);
-    }
-  }
-}
-
-export const db = new Database(dbPath);
-
-// Enable WAL mode for better concurrency and foreign keys (disable WAL in serverless /tmp if problematic)
-try {
-  if (!isServerless) {
-    db.pragma('journal_mode = WAL');
-  }
-  db.pragma('foreign_keys = ON');
-} catch (e) {
-  console.warn('SQLite pragma error:', e.message);
-}
-
-export function initDatabase() {
-  console.log('Initializing SQLite database at', dbPath);
+export async function initDatabase() {
+  console.log('Verifying tables in database...');
 
   // Users table
-  db.exec(`
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -68,20 +71,8 @@ export function initDatabase() {
     );
   `);
 
-  // Run migrations to ensure all user data columns exist in existing databases
-  const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
-  if (!userCols.includes('headline')) db.exec("ALTER TABLE users ADD COLUMN headline TEXT;");
-  if (!userCols.includes('phone')) db.exec("ALTER TABLE users ADD COLUMN phone TEXT;");
-  if (!userCols.includes('location')) db.exec("ALTER TABLE users ADD COLUMN location TEXT;");
-  if (!userCols.includes('bio')) db.exec("ALTER TABLE users ADD COLUMN bio TEXT;");
-  if (!userCols.includes('resume_url')) db.exec("ALTER TABLE users ADD COLUMN resume_url TEXT;");
-  if (!userCols.includes('portfolio_url')) db.exec("ALTER TABLE users ADD COLUMN portfolio_url TEXT;");
-  if (!userCols.includes('github_url')) db.exec("ALTER TABLE users ADD COLUMN github_url TEXT;");
-  if (!userCols.includes('linkedin_url')) db.exec("ALTER TABLE users ADD COLUMN linkedin_url TEXT;");
-  if (!userCols.includes('updated_at')) db.exec("ALTER TABLE users ADD COLUMN updated_at DATETIME;");
-
   // Companies table
-  db.exec(`
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS companies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -92,7 +83,7 @@ export function initDatabase() {
       location TEXT DEFAULT 'Remote / Hybrid',
       work_type TEXT DEFAULT 'Full-time',
       tags TEXT,
-      status TEXT NOT NULL DEFAULT 'approved', -- 'approved', 'pending', 'rejected'
+      status TEXT NOT NULL DEFAULT 'approved',
       submitted_by_user_id INTEGER,
       submitted_by_name TEXT,
       admin_notes TEXT,
@@ -103,12 +94,12 @@ export function initDatabase() {
   `);
 
   // User Applications tracking table
-  db.exec(`
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS user_applications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       company_id INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'to_apply', -- 'to_apply', 'applied', 'interviewing', 'offered', 'rejected'
+      status TEXT NOT NULL DEFAULT 'to_apply',
       is_applied INTEGER DEFAULT 0,
       is_interviewed INTEGER DEFAULT 0,
       applied_date DATETIME,
@@ -124,15 +115,15 @@ export function initDatabase() {
     );
   `);
 
-  // User Stored Links table (Private Links Data Vault in SQLite)
-  db.exec(`
+  // User Stored Links table (Private Links Data Vault)
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS user_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       url TEXT NOT NULL,
-      category TEXT NOT NULL DEFAULT 'Job Post', -- 'Job Post', 'Application Portal', 'Resume & Docs', 'Portfolio', 'Interview Prep', 'Company Site', 'Other'
-      status TEXT NOT NULL DEFAULT 'saved', -- 'saved', 'applied', 'interviewing', 'done', 'archived'
+      category TEXT NOT NULL DEFAULT 'Job Post',
+      status TEXT NOT NULL DEFAULT 'saved',
       notes TEXT,
       tags TEXT,
       clicks INTEGER DEFAULT 0,
@@ -142,25 +133,22 @@ export function initDatabase() {
     );
   `);
 
-  seedInitialData();
+  await seedInitialData();
 }
 
-function seedInitialData() {
-  // 1. Seed default accounts if they do not exist
-  const findUserByEmail = db.prepare('SELECT id FROM users WHERE email = ?');
-  const insertUser = db.prepare(`
-    INSERT INTO users (name, email, password_hash, role, headline, bio, location)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  // 1. Seed default Admin account (Hiramani Chauhan) securely in SQLite database
+async function seedInitialData() {
   const adminEmail = process.env.ADMIN_EMAIL || 'hiramanichauhan2399@gmail.com';
-  let adminUser = findUserByEmail.get(adminEmail);
   const adminPassword = process.env.ADMIN_PASSWORD || 'R@dhe#1234';
   const adminPasswordHash = bcrypt.hashSync(adminPassword, 10);
 
-  if (!adminUser) {
-    const res = insertUser.run(
+  const existingAdmin = await db.get('SELECT id FROM users WHERE email = ?', [adminEmail]);
+
+  let adminId;
+  if (!existingAdmin) {
+    const res = await db.run(`
+      INSERT INTO users (name, email, password_hash, role, headline, bio, location)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
       'Hiramani Chauhan',
       adminEmail,
       adminPasswordHash,
@@ -168,12 +156,12 @@ function seedInitialData() {
       'Platform Owner & Full Stack Software Engineer',
       'Creator and administrator of EasyJobApplied.',
       'India'
-    );
-    adminUser = { id: res.lastInsertRowid };
-    console.log(`Configured admin in SQLite: ${adminEmail}`);
+    ]);
+    adminId = res.lastInsertRowid;
+    console.log(`Configured admin in Turso: ${adminEmail}`);
   } else {
-    // Ensure admin role and updated password hash
-    db.prepare(`
+    adminId = existingAdmin.id;
+    await db.run(`
       UPDATE users 
       SET 
         role = 'admin',
@@ -181,71 +169,68 @@ function seedInitialData() {
         password_hash = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE email = ?
-    `).run(adminPasswordHash, adminEmail);
-    console.log(`Verified admin credentials in SQLite: ${adminEmail}`);
+    `, [adminPasswordHash, adminEmail]);
+    console.log(`Verified admin credentials in Turso: ${adminEmail}`);
   }
 
-  // Remove any unauthorized legacy accounts
-  db.prepare(`
-    DELETE FROM users 
-    WHERE email != ? AND id NOT IN (SELECT id FROM users WHERE email = ?)
-  `).run(adminEmail, adminEmail);
+  // Remove unauthorized legacy accounts
+  await db.run('DELETE FROM users WHERE email != ? AND id NOT IN (SELECT id FROM users WHERE email = ?)', [adminEmail, adminEmail]);
 
-  // 2. Seed initial stored links for admin user if user_links is empty
-  const linksCount = db.prepare('SELECT COUNT(*) as count FROM user_links').get().count;
-  if (linksCount === 0 && adminUser) {
-    const insertLink = db.prepare(`
-      INSERT INTO user_links (user_id, title, url, category, status, notes, tags)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+  // Seed user_links if empty
+  const linksCountRow = await db.get('SELECT COUNT(*) as count FROM user_links');
+  if (linksCountRow && Number(linksCountRow.count) === 0 && adminId) {
+    const defaultLinks = [
+      [
+        adminId,
+        'Google Senior Frontend Role - Dublin/Remote',
+        'https://www.google.com/about/careers/applications/jobs/results/',
+        'Job Post',
+        'applied',
+        'Applied via referral from John. Role focuses on Next.js & internal analytics tooling.',
+        'Google, Frontend, Next.js'
+      ],
+      [
+        adminId,
+        'My Hosted Portfolio & Interactive Resume',
+        'https://github.com/hiramanichauhan',
+        'Portfolio',
+        'saved',
+        'Updated with latest 2025 projects, open-source work, and live demos.',
+        'Portfolio, GitHub, Resume'
+      ],
+      [
+        adminId,
+        'Stripe Careers Engineering Dashboard',
+        'https://stripe.com/jobs/search',
+        'Application Portal',
+        'interviewing',
+        'System design interview scheduled for next Thursday.',
+        'Stripe, System Design, Payments'
+      ],
+      [
+        adminId,
+        'LeetCode 75 Curated Interview Prep Questions',
+        'https://leetcode.com/studyplan/leetcode-75/',
+        'Interview Prep',
+        'saved',
+        'Review Graph traversal and Dynamic Programming patterns.',
+        'Algorithms, DSA, Prep'
+      ]
+    ];
 
-    insertLink.run(
-      adminUser.id,
-      'Google Senior Frontend Role - Dublin/Remote',
-      'https://www.google.com/about/careers/applications/jobs/results/',
-      'Job Post',
-      'applied',
-      'Applied via referral from John. Role focuses on Next.js & internal analytics tooling.',
-      'Google, Frontend, Next.js'
-    );
-
-    insertLink.run(
-      adminUser.id,
-      'My Hosted Portfolio & Interactive Resume',
-      'https://github.com/hiramanichauhan',
-      'Portfolio',
-      'saved',
-      'Updated with latest 2025 projects, open-source work, and live demos.',
-      'Portfolio, GitHub, Resume'
-    );
-
-    insertLink.run(
-      adminUser.id,
-      'Stripe Careers Engineering Dashboard',
-      'https://stripe.com/jobs/search',
-      'Application Portal',
-      'interviewing',
-      'System design interview scheduled for next Thursday.',
-      'Stripe, System Design, Payments'
-    );
-
-    insertLink.run(
-      adminUser.id,
-      'LeetCode 75 Curated Interview Prep Questions',
-      'https://leetcode.com/studyplan/leetcode-75/',
-      'Interview Prep',
-      'saved',
-      'Review Graph traversal and Dynamic Programming patterns.',
-      'Algorithms, DSA, Prep'
-    );
-
-    console.log('Seeded initial user links data in SQLite.');
+    for (const link of defaultLinks) {
+      await db.run(`
+        INSERT INTO user_links (user_id, title, url, category, status, notes, tags)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, link);
+    }
+    console.log('Seeded initial user links data in Turso.');
   }
 
-  // 3. Seed curated companies if empty
-  const companyCount = db.prepare('SELECT COUNT(*) as count FROM companies').get().count;
-  if (companyCount === 0) {
-    console.log('Seeding curated company links and pending submissions...');
+  // Seed companies if empty
+  const companyCountRow = await db.get('SELECT COUNT(*) as count FROM companies');
+  if (companyCountRow && Number(companyCountRow.count) === 0) {
+    console.log('Seeding curated company links in Turso...');
 
     const curatedCompanies = [
       {
@@ -394,19 +379,25 @@ function seedInitialData() {
       }
     ];
 
-    const insertCompany = db.prepare(`
-      INSERT INTO companies (name, website_url, careers_url, description, category, location, work_type, tags, status, submitted_by_user_id, submitted_by_name)
-      VALUES (@name, @website_url, @careers_url, @description, @category, @location, @work_type, @tags, @status, @submitted_by_user_id, @submitted_by_name)
-    `);
-
     for (const comp of curatedCompanies) {
-      insertCompany.run({
-        ...comp,
-        submitted_by_user_id: null
-      });
+      await db.run(`
+        INSERT INTO companies (name, website_url, careers_url, description, category, location, work_type, tags, status, submitted_by_user_id, submitted_by_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        comp.name,
+        comp.website_url,
+        comp.careers_url,
+        comp.description,
+        comp.category,
+        comp.location,
+        comp.work_type,
+        comp.tags,
+        comp.status,
+        null,
+        comp.submitted_by_name
+      ]);
     }
 
-    // Insert 2 pending submissions so Admin can test the validation & approval flow right away!
     const pendingCompanies = [
       {
         name: 'Notion',
@@ -437,9 +428,24 @@ function seedInitialData() {
     ];
 
     for (const comp of pendingCompanies) {
-      insertCompany.run(comp);
+      await db.run(`
+        INSERT INTO companies (name, website_url, careers_url, description, category, location, work_type, tags, status, submitted_by_user_id, submitted_by_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        comp.name,
+        comp.website_url,
+        comp.careers_url,
+        comp.description,
+        comp.category,
+        comp.location,
+        comp.work_type,
+        comp.tags,
+        comp.status,
+        null,
+        comp.submitted_by_name
+      ]);
     }
 
-    console.log('Seeded curated companies.');
+    console.log('Seeded curated companies in Turso.');
   }
 }

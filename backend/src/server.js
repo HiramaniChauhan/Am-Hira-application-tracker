@@ -19,8 +19,8 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Initialize SQLite database
-initDatabase();
+// Initialize Database
+initDatabase().catch(err => console.error('Database initialization error:', err));
 
 // API Routes
 app.use('/api/auth', authRouter);
@@ -40,7 +40,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
     appName: 'EasyJobApplied API',
-    database: 'SQLite',
+    database: 'Turso Cloud SQLite',
     time: new Date().toISOString()
   });
 });
