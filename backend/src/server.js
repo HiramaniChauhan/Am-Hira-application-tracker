@@ -28,19 +28,32 @@ app.use('/api/companies', companiesRouter);
 app.use('/api/applications', applicationsRouter);
 app.use('/api/links', linksRouter);
 
+app.get('/api', (req, res) => {
+  res.json({
+    status: 'online',
+    appName: 'EasyJobApplied API',
+    message: 'EasyJobApplied API is running'
+  });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
     appName: 'EasyJobApplied API',
-    database: 'SQLite (Free, Persistent, Local)',
+    database: 'SQLite',
     time: new Date().toISOString()
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`===============================================`);
-  console.log(`EasyJobApplied Backend running on http://localhost:${PORT}`);
-  console.log(`Database: SQLite (backend/data/easyjob.db)`);
-  console.log(`Admin Account: hiramanichauhan2399@gmail.com (Protected in SQLite)`);
-  console.log(`===============================================`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`===============================================`);
+    console.log(`EasyJobApplied Backend running on http://localhost:${PORT}`);
+    console.log(`Database: SQLite`);
+    console.log(`Admin Account: hiramanichauhan2399@gmail.com (Protected in SQLite)`);
+    console.log(`===============================================`);
+  });
+}
+
+export default app;
+

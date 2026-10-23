@@ -7,17 +7,42 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dataDir = path.join(__dirname, '..', 'data');
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const dataDir = isServerless ? '/tmp' : path.join(__dirname, '..', 'data');
+
 if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+  } catch (err) {
+    console.warn('Could not create data directory:', err.message);
+  }
 }
 
-const dbPath = path.join(dataDir, 'easyjob.db');
+const dbPath = process.env.DB_PATH || path.join(dataDir, 'easyjob.db');
+
+// In serverless environments, copy existing seed database to /tmp if it doesn't exist yet
+if (isServerless && !fs.existsSync(dbPath)) {
+  const localSeedDb = path.join(__dirname, '..', 'data', 'easyjob.db');
+  if (fs.existsSync(localSeedDb)) {
+    try {
+      fs.copyFileSync(localSeedDb, dbPath);
+    } catch (err) {
+      console.warn('Could not copy seed database to /tmp:', err.message);
+    }
+  }
+}
+
 export const db = new Database(dbPath);
 
-// Enable WAL mode for better concurrency and foreign keys
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// Enable WAL mode for better concurrency and foreign keys (disable WAL in serverless /tmp if problematic)
+try {
+  if (!isServerless) {
+    db.pragma('journal_mode = WAL');
+  }
+  db.pragma('foreign_keys = ON');
+} catch (e) {
+  console.warn('SQLite pragma error:', e.message);
+}
 
 export function initDatabase() {
   console.log('Initializing SQLite database at', dbPath);
