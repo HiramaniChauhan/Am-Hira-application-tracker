@@ -156,10 +156,8 @@ function seedInitialData() {
   // 1. Seed default Admin account (Hiramani Chauhan) securely in SQLite database
   const adminEmail = process.env.ADMIN_EMAIL || 'hiramanichauhan2399@gmail.com';
   let adminUser = findUserByEmail.get(adminEmail);
-  // Default bcrypt hash for secure initialization without exposing plaintext credentials in repository
-  const adminPasswordHash = process.env.ADMIN_PASSWORD
-    ? bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10)
-    : '$2a$10$YCuBtqLJN1jN.kzNh36TquNt07LJiku3bOTAZcoLynaEYof0lZw4u';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@12345';
+  const adminPasswordHash = bcrypt.hashSync(adminPassword, 10);
 
   if (!adminUser) {
     const res = insertUser.run(
