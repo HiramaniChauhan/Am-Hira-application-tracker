@@ -349,7 +349,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="relative z-10 flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="relative z-10 flex-1 max-w-7xl 2xl:max-w-[1536px] w-full mx-auto px-3 sm:px-6 lg:px-8 2xl:px-12 py-4 sm:py-8">
         {/* Tab & Search Navigation */}
         <TabNav
           activeTab={activeTab}
@@ -523,7 +523,7 @@ export default function App() {
                 </div>
 
                 {/* Right: 1, 2, 3, 4 ..... Pagination */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-wrap justify-center sm:justify-end">
                   <button
                     onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
                     disabled={safeCurrentPage === 1}
@@ -567,10 +567,10 @@ export default function App() {
 
       {/* Footer */}
       <footer className="mt-auto border-t border-[#1e1f24] bg-[#0d0e10] py-6 text-center text-xs text-[#666666]">
-        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="max-w-7xl 2xl:max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <span className="font-brand font-semibold text-[#888888]">Am hira.</span>
           <div className="flex items-center gap-4 text-[#666666]">
-            <span>SQLite Database</span>
+            <span>Turso Cloud SQLite</span>
             <span>•</span>
             <span>Minimalist Pipeline</span>
           </div>

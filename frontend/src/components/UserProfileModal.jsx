@@ -126,18 +126,18 @@ export default function UserProfileModal({ isOpen, onClose, user, onUserUpdated,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-[#282930] bg-[#16171b] shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl border border-[#282930] bg-[#16171b] shadow-2xl overflow-hidden">
         
         {/* Header */}
-        <div className="px-6 py-5 border-b border-[#23242b] flex items-center justify-between shrink-0 bg-[#121316]">
+        <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-[#23242b] flex items-center justify-between shrink-0 bg-[#121316]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#c5a059]/15 border border-[#c5a059]/30 flex items-center justify-center text-sm font-bold text-[#c5a059]">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#c5a059]/15 border border-[#c5a059]/30 flex items-center justify-center text-sm font-bold text-[#c5a059] shrink-0">
               {name ? name[0].toUpperCase() : 'U'}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-brand font-bold text-lg text-white">User Data & Profile</h2>
+                <h2 className="font-brand font-bold text-base sm:text-lg text-white">User Data & Profile</h2>
                 <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${
                   user.role === 'admin' 
                     ? 'bg-[#c5a059]/20 text-[#c5a059] border border-[#c5a059]/40' 
@@ -148,7 +148,7 @@ export default function UserProfileModal({ isOpen, onClose, user, onUserUpdated,
               </div>
               <p className="text-xs text-[#888888] flex items-center gap-1.5 mt-0.5">
                 <Database className="w-3 h-3 text-[#c5a059]" />
-                <span>Stored in SQLite Database (`backend/data/easyjob.db`)</span>
+                <span>Turso Cloud SQLite Database</span>
               </p>
             </div>
           </div>

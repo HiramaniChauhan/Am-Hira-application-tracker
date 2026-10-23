@@ -224,20 +224,20 @@ export default function LinksVault({ user, onRequireAuth, showToast }) {
           <div className="flex items-center gap-2">
             <LinkIcon className="w-4 h-4 text-[#c5a059]" />
             <h3 className="font-brand font-bold text-base text-white">
-              SQLite Links Vault
+              Links Vault
             </h3>
             <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[#c5a059]/20 text-[#c5a059] border border-[#c5a059]/30">
               {stats.total} Links
             </span>
           </div>
           <p className="text-[11px] text-[#777777] mt-0.5">
-            Your personal SQLite-backed links library for job posts, career portals, portfolios, and docs.
+            Your personal cloud-backed links library for job posts, career portals, portfolios, and docs.
           </p>
         </div>
 
         <button
           onClick={handleOpenAddModal}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-[#c5a059] hover:bg-[#d8b46e] text-[#101114] shadow-sm transition-all active:scale-95 cursor-pointer"
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-[#c5a059] hover:bg-[#d8b46e] text-[#101114] shadow-sm transition-all active:scale-95 cursor-pointer shrink-0"
         >
           <Plus className="w-4 h-4" />
           <span>Store New Link</span>
@@ -254,17 +254,17 @@ export default function LinksVault({ user, onRequireAuth, showToast }) {
             placeholder="Search links by title, url, tags, or notes..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-[#121316] border border-[#23242b] text-white placeholder-[#555555] outline-none focus:border-[#c5a059]"
+            className="w-full pl-8 pr-3 py-2 sm:py-1.5 text-xs rounded-lg bg-[#121316] border border-[#23242b] text-white placeholder-[#555555] outline-none focus:border-[#c5a059]"
           />
         </div>
 
-        {/* Categories Badges */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+        {/* Categories Badges with horizontal scroll on mobile */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar scroll-smooth">
           {CATEGORIES.map((cat) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg whitespace-nowrap transition-colors cursor-pointer border ${
+              className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg whitespace-nowrap transition-colors cursor-pointer border shrink-0 ${
                 selectedCategory === cat
                   ? 'bg-[#c5a059] text-[#101114] border-[#c5a059]'
                   : 'bg-[#141519] text-[#888888] hover:text-white border-[#23242b] hover:border-[#353642]'
@@ -350,7 +350,7 @@ export default function LinksVault({ user, onRequireAuth, showToast }) {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => handleLinkClick(link.id)}
-                      className="inline-flex items-center gap-1 text-xs text-[#888888] hover:text-[#c5a059] hover:underline font-mono truncate max-w-sm sm:max-w-md transition-colors"
+                      className="inline-flex items-center gap-1 text-xs text-[#888888] hover:text-[#c5a059] hover:underline font-mono truncate max-w-[220px] xs:max-w-xs sm:max-w-md lg:max-w-xl transition-colors"
                       title={link.url}
                     >
                       <span className="truncate">{link.url}</span>

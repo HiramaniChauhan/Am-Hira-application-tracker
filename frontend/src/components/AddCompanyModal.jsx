@@ -54,8 +54,8 @@ export default function AddCompanyModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md rounded-2xl border border-[#282930] bg-[#16171b] shadow-2xl p-6 sm:p-7">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl border border-[#282930] bg-[#16171b] shadow-2xl p-5 sm:p-7">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-[#24252c]">
           <div>

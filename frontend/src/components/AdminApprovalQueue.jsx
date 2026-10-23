@@ -97,7 +97,7 @@ export default function AdminApprovalQueue({
                         href={company.careers_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs font-mono text-[#a0a0a0] hover:text-[#c5a059] underline inline-flex items-center gap-1 max-w-md truncate"
+                        className="text-xs font-mono text-[#a0a0a0] hover:text-[#c5a059] underline inline-flex items-center gap-1 max-w-[220px] xs:max-w-xs sm:max-w-md truncate"
                         title="Click to test link in new tab"
                       >
                         <span className="truncate">{company.careers_url}</span>

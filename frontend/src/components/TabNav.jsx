@@ -39,7 +39,7 @@ export default function TabNav({
   }
 
   return (
-    <div className="space-y-4 mb-6">
+    <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
       {/* Clean matte search input */}
       <div className="relative">
         <Search className="w-4 h-4 text-[#777777] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -48,13 +48,13 @@ export default function TabNav({
           placeholder="Search company or link..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 text-sm rounded-lg bg-[#16171b] border border-[#26272e] focus:border-[#c5a059] text-[#eeeeee] placeholder-[#666666] outline-none transition-colors"
+          className="w-full pl-10 pr-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-lg bg-[#16171b] border border-[#26272e] focus:border-[#c5a059] text-[#eeeeee] placeholder-[#666666] outline-none transition-colors"
         />
       </div>
 
-      {/* Main Tabs bar with Aer-style warm gold active indicator */}
-      <div className="border-b border-[#222329] overflow-x-auto no-scrollbar">
-        <nav className="flex space-x-4 pb-px">
+      {/* Main Tabs bar with smooth touch scroll for mobile */}
+      <div className="border-b border-[#222329] overflow-x-auto no-scrollbar scroll-smooth">
+        <nav className="flex space-x-2 sm:space-x-4 pb-px min-w-max">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -63,16 +63,23 @@ export default function TabNav({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 py-3 px-1 text-xs sm:text-sm font-semibold whitespace-nowrap border-b-2 transition-all cursor-pointer ${isActive
-                  ? 'border-[#c5a059] text-white'
-                  : 'border-transparent text-[#888888] hover:text-[#cccccc] hover:border-[#33343c]'
-                  }`}
+                className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold whitespace-nowrap border-b-2 transition-all cursor-pointer shrink-0 ${
+                  isActive
+                    ? 'border-[#c5a059] text-white'
+                    : 'border-transparent text-[#888888] hover:text-[#cccccc] hover:border-[#33343c]'
+                }`}
               >
                 <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-[#c5a059]' : 'text-[#777777]'}`} />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && tab.count > 0 && (
-                  <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ${tab.badgeColor || (isActive ? 'bg-[#c5a059]/20 text-[#e0c48e]' : 'bg-[#222329] text-[#888888]')
-                    }`}>
+                  <span
+                    className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ${
+                      tab.badgeColor ||
+                      (isActive
+                        ? 'bg-[#c5a059]/20 text-[#e0c48e]'
+                        : 'bg-[#222329] text-[#888888]')
+                    }`}
+                  >
                     {tab.count}
                   </span>
                 )}
